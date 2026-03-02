@@ -1,0 +1,33 @@
+{
+  "name": "repl-scratchpad",
+  "version": "1.0.0",
+  "description": "Persistent REPL scratchpad for coding agents — variables survive across turns, only print() enters context",
+  "author": "knot0-com",
+  "license": "MIT",
+  "repository": "https://github.com/knot0-com/repl-scratchpad",
+  "skills": [
+    {
+      "name": "repl-scratchpad",
+      "path": ".",
+      "description": "Persistent Python REPL where variables survive across turns and only print() output enters context"
+    }
+  ],
+  "compatibility": [
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "cursor",
+    "github-copilot",
+    "opencode",
+    "windsurf",
+    "antigravity"
+  ],
+  "tags": [
+    "repl",
+    "scratchpad",
+    "context-efficiency",
+    "agent-memory",
+    "data-processing",
+    "rlm"
+  ]
+}
