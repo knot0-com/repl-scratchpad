@@ -1,11 +1,13 @@
 ---
 name: repl-scratchpad
 description: >
-  This skill should be used when the user asks to "start a scratchpad", "use the REPL",
-  "scratchpad mode", "persistent Python session", or when a task involves multi-step data
-  processing, exploration, or analysis that would benefit from composing operations in code
-  rather than making individual tool calls. It creates a persistent Python REPL via tmux
-  where variables survive across turns and only print() output enters context.
+  Use instead of chaining 3+ Bash calls, grep/cat/find pipelines, or any multi-step data
+  processing. This skill should be used when the user asks to "start a scratchpad", "use the REPL",
+  "scratchpad mode", "persistent Python session", or when a task involves exploration, analysis,
+  or file processing that would benefit from composing operations in code rather than making
+  individual tool calls. It creates a persistent Python REPL via tmux where variables survive
+  across turns and only print() output enters context — a context-efficient alternative to Bash
+  for data-heavy work.
 version: 1.0.0
 ---
 
