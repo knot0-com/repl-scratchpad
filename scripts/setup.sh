@@ -5,16 +5,22 @@
 
 SESSION="scratchpad"
 BOOTSTRAP="/tmp/_scratchpad_bootstrap.py"
+OUTPUT_FILE="/tmp/_scratchpad_output.txt"
 
 # Kill existing session if present
 tmux kill-session -t "$SESSION" 2>/dev/null
 
+# Clean output file
+> "$OUTPUT_FILE"
+
 # Write bootstrap script to file (avoids noisy interactive echo)
 cat > "$BOOTSTRAP" << 'PYEOF'
-import sys, json, io
+import sys, io
+
+_OUTPUT_FILE = "/tmp/_scratchpad_output.txt"
 
 def _scratchpad_exec(code_file):
-    """Execute code from file, capture only print() output."""
+    """Execute code from file, capture only print() output to file."""
     _old = sys.stdout
     _buf = io.StringIO()
     sys.stdout = _buf
@@ -23,13 +29,16 @@ def _scratchpad_exec(code_file):
             exec(compile(f.read(), code_file, 'exec'), globals())
         sys.stdout = _old
         output = _buf.getvalue()
-        if output:
-            print(output, end='')
-        else:
-            print('[no output]')
+        if not output:
+            output = '[no output]\n'
     except Exception as e:
         sys.stdout = _old
-        print(f'ERROR: {type(e).__name__}: {e}')
+        output = _buf.getvalue() + f'ERROR: {type(e).__name__}: {e}\n'
+    # Write output to file for clean retrieval
+    with open(_OUTPUT_FILE, 'w') as f:
+        f.write(output)
+    # Also print to terminal for visual feedback
+    print(output, end='')
     print('---DONE---')
 PYEOF
 

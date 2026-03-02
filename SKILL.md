@@ -79,9 +79,9 @@ PYEOF
 # Step 2: Execute in persistent session
 tmux send-keys -t scratchpad "_scratchpad_exec('/tmp/scratchpad_cmd.py')" Enter
 
-# Step 3: Wait and capture output
+# Step 3: Wait and read output file (each execution overwrites cleanly)
 sleep 1
-tmux capture-pane -t scratchpad -p -S -30 | sed -n '1,/DONE/p' | grep -v -e DONE -e '>>>' -e '_scratchpad_exec'
+cat /tmp/_scratchpad_output.txt
 ```
 
 ### The Print Contract
@@ -146,7 +146,7 @@ for s in broken:
 |-|-|
 | Start session | `bash <skill-path>/scripts/setup.sh` |
 | Execute code | Write to `/tmp/scratchpad_cmd.py`, then `tmux send-keys -t scratchpad "_scratchpad_exec('/tmp/scratchpad_cmd.py')" Enter` |
-| Read output | `sleep 1 && tmux capture-pane -t scratchpad -p -S -30 \| sed -n '1,/DONE/p' \| grep -v -e DONE -e '>>>' -e '_scratchpad_exec'` |
+| Read output | `sleep 1 && cat /tmp/_scratchpad_output.txt` |
 | Check if alive | `tmux has-session -t scratchpad 2>/dev/null && echo "alive" \|\| echo "dead"` |
 | List variables | Execute `print([k for k in dir() if not k.startswith('_')])` in scratchpad |
 | Reset state | `bash <skill-path>/scripts/setup.sh` (restarts clean) |
@@ -161,4 +161,4 @@ for s in broken:
 | Forgetting to print results | Always end with `print()` — silent code produces no context |
 | Dumping raw data with `print(huge_list)` | Summarize first: `print(f"{len(data)} items, {len(errors)} errors")` |
 | Starting new scratchpad when one exists | Check `tmux has-session -t scratchpad` first |
-| Not waiting for output | Use `sleep 1` or check for `SCRATCHPAD_DONE` marker before reading |
+| Not waiting for output | Use `sleep 1` before reading, or `sleep 2` for longer operations |
