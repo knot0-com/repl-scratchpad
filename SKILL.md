@@ -140,6 +140,195 @@ for s in broken:
     print(f"  {s['name']} -> {', '.join(deps[s['id']])}")
 ```
 
+## Advanced Patterns
+
+### Map-Reduce: Fan-Out Processing
+
+Use Python's built-in concurrency to process many files/items in parallel inside the REPL.
+All processing stays in the scratchpad — only the summary enters context.
+
+```python
+import concurrent.futures, os, glob
+
+def analyze_file(path):
+    with open(path) as f:
+        lines = f.readlines()
+    imports = [l for l in lines if l.startswith("import") or l.startswith("from")]
+    classes = [l for l in lines if l.strip().startswith("class ")]
+    return {"path": path, "lines": len(lines), "imports": len(imports), "classes": len(classes)}
+
+files = glob.glob("src/**/*.py", recursive=True)
+with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+    results = list(pool.map(analyze_file, files))
+
+# 200 files processed, zero context used. Only summary prints:
+print(f"{len(results)} files: {sum(r['lines'] for r in results):,} lines")
+big = sorted(results, key=lambda r: -r['lines'])[:5]
+for r in big:
+    print(f"  {r['lines']:>5} lines  {r['path']}")
+```
+
+### Recursive Drill-Down
+
+Process data in a loop, drilling deeper on each iteration. The REPL accumulates
+state without re-querying.
+
+```python
+# Turn 1: broad scan
+import os, glob
+all_files = glob.glob("**/*.ts", recursive=True)
+by_dir = {}
+for f in all_files:
+    d = os.path.dirname(f)
+    by_dir.setdefault(d, []).append(f)
+print(f"{len(all_files)} files across {len(by_dir)} dirs")
+for d in sorted(by_dir, key=lambda d: -len(by_dir[d]))[:5]:
+    print(f"  {len(by_dir[d]):>3} files  {d}")
+```
+
+```python
+# Turn 2: drill into the largest directory (by_dir still in memory)
+target = sorted(by_dir, key=lambda d: -len(by_dir[d]))[0]
+details = []
+for f in by_dir[target]:
+    with open(f) as fh:
+        content = fh.read()
+    exports = [l for l in content.split('\n') if 'export' in l]
+    details.append({"file": os.path.basename(f), "lines": content.count('\n'), "exports": len(exports)})
+print(f"\n{target}/ deep dive:")
+for d in sorted(details, key=lambda x: -x['lines']):
+    print(f"  {d['lines']:>4} lines  {d['exports']:>2} exports  {d['file']}")
+```
+
+### Spawning Subagents for Heavy Lifting
+
+When the REPL hits limits (needs LLM reasoning, must read hundreds of files, or
+requires framework-specific tools), delegate to subagents. The REPL orchestrates
+the work and collects results.
+
+#### Claude Code
+
+Claude Code subagents are spawned via the **Agent tool** from the main conversation.
+The scratchpad prepares the work, the main agent fans out subagents, and results
+flow back.
+
+Pattern: use the REPL to identify what needs processing, then ask the main agent
+to spawn subagents for each item.
+
+```python
+# Step 1: REPL identifies the targets
+import glob, os
+files = glob.glob("src/**/*.ts", recursive=True)
+large = [f for f in files if os.path.getsize(f) > 10000]
+print("Files needing deep review:")
+for f in large:
+    print(f"  {f} ({os.path.getsize(f)//1000}KB)")
+```
+
+Then tell the main agent:
+
+```
+Spawn parallel subagents to review each of these files:
+- src/agent/turn-loop.ts
+- src/store/index.ts
+- src/server/routes.ts
+Each subagent should analyze imports, exports, and complexity.
+```
+
+Claude Code spawns subagents using the Agent tool with these key parameters:
+- `subagent_type`: built-in types (`Explore`, `Plan`, `general-purpose`) or custom agents
+- `run_in_background`: set `true` for parallel execution
+- `model`: `haiku` for fast/cheap tasks, `sonnet`/`opus` for complex analysis
+- `isolation: "worktree"` for subagents that modify files
+
+Custom subagents are defined as markdown files in `.claude/agents/` or `~/.claude/agents/`.
+See [Claude Code subagent docs](https://code.claude.com/docs/en/sub-agents) for full reference.
+
+#### OpenAI Codex
+
+Codex supports multi-agent workflows (experimental, enable with `/experimental`).
+The main agent can spawn specialized agents in parallel and collect results.
+
+Pattern: REPL prepares a task list, Codex fans out workers.
+
+```python
+# REPL prepares work items
+tasks = [
+    {"file": f, "size": os.path.getsize(f)}
+    for f in glob.glob("src/**/*.py", recursive=True)
+    if os.path.getsize(f) > 5000
+]
+# Write task manifest for Codex to process
+import json
+with open("/tmp/review_tasks.json", "w") as f:
+    json.dump(tasks, f, indent=2)
+print(f"{len(tasks)} files queued for parallel review")
+```
+
+Then tell Codex: "Read /tmp/review_tasks.json and spawn agents to review each file in parallel."
+
+Codex can also fan out work from CSV files with `spawn_agents_on_csv` for batch processing.
+See [Codex multi-agent docs](https://developers.openai.com/codex/multi-agent/) for details.
+
+#### Gemini CLI
+
+Gemini CLI subagents are defined as markdown files in `.gemini/agents/` with YAML frontmatter.
+Enable with `"experimental": {"enableAgents": true}` in settings.json.
+
+```yaml
+# .gemini/agents/file-reviewer.md
+---
+name: file-reviewer
+description: Reviews a single file for quality and patterns
+tools:
+  - read_file
+  - search_code
+model: gemini-2.5-pro
+---
+Review the specified file for code quality, patterns, and potential issues.
+```
+
+The main agent delegates to subagents automatically based on the description.
+Parallel execution support is being actively developed.
+See [Gemini CLI subagent docs](https://geminicli.com/docs/core/subagents/) for details.
+
+### Combining REPL + Subagents: The Full Pattern
+
+The most powerful pattern chains the REPL and subagents together:
+
+1. **REPL scans** — broad sweep, identifies targets (1 turn, no context waste)
+2. **Subagents analyze** — deep dive on each target in parallel (isolated context per agent)
+3. **REPL synthesizes** — collect results, compute aggregates, print final summary
+
+```python
+# Step 1 (REPL): Identify what needs work
+files = glob.glob("src/**/*.ts", recursive=True)
+large = [(f, os.path.getsize(f)) for f in files if os.path.getsize(f) > 10000]
+print(f"{len(large)} files need deep analysis")
+for f, sz in sorted(large, key=lambda x: -x[1])[:10]:
+    print(f"  {sz//1000:>3}KB  {f}")
+```
+
+```
+# Step 2: Ask the agent to spawn parallel subagents
+"Review the top 5 files from the scratchpad output using parallel subagents.
+For each, report: complexity score, key exports, and potential issues."
+```
+
+```python
+# Step 3 (REPL): Synthesize subagent results
+# (paste or load the subagent summaries)
+reviews = {
+    "turn-loop.ts": {"complexity": "high", "issues": 3},
+    "store/index.ts": {"complexity": "medium", "issues": 1},
+    "routes.ts": {"complexity": "high", "issues": 5},
+}
+total_issues = sum(r["issues"] for r in reviews.values())
+high_complexity = [f for f, r in reviews.items() if r["complexity"] == "high"]
+print(f"{total_issues} issues across {len(reviews)} files")
+print(f"High complexity: {', '.join(high_complexity)}")
+```
+
 ## Commands Reference
 
 | Action | Command |
