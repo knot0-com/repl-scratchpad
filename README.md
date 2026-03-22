@@ -128,3 +128,7 @@ The agent processes everything inside the REPL — file reads, API calls, data t
 ## License
 
 MIT
+
+---
+
+Built by [Knot0](https://knot0.com) — software that assembles itself.
